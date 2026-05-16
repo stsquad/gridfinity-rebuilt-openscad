@@ -57,6 +57,9 @@ style_plate = 3; // [0: thin, 1:weighted, 2:skeletonized, 3: screw together, 4: 
 // hole styles
 style_hole = 0; // [0:none, 1:countersink, 2:counterbore]
 
+// handles
+style_handle = 0; // [0:none, 1:one handle, 2:two handles]
+
 /* [Magnet Hole] */
 // Baseplate will have holes for 6mm Diameter x 2mm high magnets.
 enable_magnet = true;
@@ -70,7 +73,7 @@ hole_options = bundle_hole_options(refined_hole=false, magnet_hole=enable_magnet
 // ===== IMPLEMENTATION ===== //
 
 color("tomato")
-gridfinityBaseplate([gridx, gridy], l_grid, [distancex, distancey], style_plate, hole_options, style_hole, [fitx, fity]);
+gridfinityBaseplate([gridx, gridy], l_grid, [distancex, distancey], style_plate, hole_options, style_hole, [fitx, fity], style_handle);
 
 // ===== CONSTRUCTION ===== //
 
@@ -87,8 +90,9 @@ gridfinityBaseplate([gridx, gridy], l_grid, [distancex, distancey], style_plate,
  * @param hole_options
  * @param sh Style of screw hole allowing the baseplate to be mounted to something.
  * @param fit_offset Determines where padding is added.
+ * @param style_handle Handle style (0: none, 1: one, 2: two).
  */
-module gridfinityBaseplate(grid_size_bases, length, min_size_mm, sp, hole_options, sh, fit_offset = [0, 0]) {
+module gridfinityBaseplate(grid_size_bases, length, min_size_mm, sp, hole_options, sh, fit_offset = [0, 0], style_handle = 0) {
 
     assert(is_list(grid_size_bases) && len(grid_size_bases) == 2,
         "grid_size_bases must be a 2d list");
@@ -159,8 +163,10 @@ module gridfinityBaseplate(grid_size_bases, length, min_size_mm, sp, hole_option
         union() {
             // Baseplate itself
             difference() {
-                translate(padding_start_point)
-                cube(size_mm);
+                translate(padding_start_point) union() {
+                    cube(size_mm);
+                    baseplate_handles(style_handle, size_mm, length / 2);
+                }
                 // Replicated Single Baseplate piece
                 pattern_grid(grid_size, [length, length], true, true) {
                     if (minimal) {
@@ -327,5 +333,48 @@ module cutter_screw_together(gx, gy, size = l_grid) {
         pattern_grid([1, n_screws], [1, d_screw_head + screw_spacing], true, true)
         rotate([0,90,0])
         cylinder(h=size/2, d=d_screw, center = true);
+    }
+}
+
+module handle_3d(w, protrusion, height, thickness=8, chamfer=1.5) {
+    d_out = ((w/2)*(w/2) - protrusion*protrusion) / (2 * protrusion);
+    r_out = d_out + protrusion;
+    r_in = r_out - thickness;
+
+    // Use intersection to bound the handle to the protrusion area
+    // and prevent it from extending inside the grid.
+    intersection() {
+        translate([-d_out, 0, 0])
+        rotate_extrude()
+        translate([r_in, 0])
+        polygon([
+            [0, 0],
+            [thickness, 0],
+            [thickness, height - chamfer],
+            [thickness - chamfer, height],
+            [chamfer, height],
+            [0, height - chamfer]
+        ]);
+
+        // Box that bounds the handle outside the grid (local x >= 0)
+        translate([0, -w/2, 0])
+        cube([protrusion + TOLLERANCE, w, height]);
+    }
+}
+
+module baseplate_handles(style_handle, size_mm, protrusion) {
+    if (style_handle > 0) {
+        w = size_mm.x - 2 * BASEPLATE_OUTER_RADIUS;
+        // Handle at +Y
+        translate([size_mm.x/2, size_mm.y, 0])
+            rotate([0, 0, 90])
+            handle_3d(w, protrusion, size_mm.z);
+
+        if (style_handle == 2) {
+            // Handle at -Y
+            translate([size_mm.x/2, 0, 0])
+                rotate([0, 0, -90])
+                handle_3d(w, protrusion, size_mm.z);
+        }
     }
 }
